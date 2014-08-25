@@ -1,0 +1,123 @@
+# Predicting classe of exercise based on data from accelerometers on the belt, forearm, arm, and dumbell
+
+by: MonicaPH
+Date: August, 2014
+
+## Background and data
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset). 
+
+## Objective
+
+Predict the manner in which they did the exercise. This is the "classe" variable in the training set.
+
+
+## Data Processing
+
+Firts it loads the required libraries. Then instructions are included to download, unzip and read the data:
+
+```{r loading,echo=TRUE}
+#Libraries
+library(ggplot2)
+library(caret)
+library(randomForest)
+#library(doMC); 
+
+#registerDoMC(cores = 4)
+Sys.setlocale("LC_TIME", "English")       # Set language to engish
+set.seed(555)
+
+#Downloading
+fileurl<-"https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+if(!file.exists("pml-training.csv")){
+      download.file(fileurl, destfile="pml-training.csv")
+}
+fileurl<-"https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+if(!file.exists("pml-testing.csv")){
+      download.file(fileurl, destfile="pml-testing.csv")
+}
+
+#Reading
+train <- read.csv("pml-training.csv")
+test <- read.csv("pml-testing.csv",header=TRUE)
+
+#Splitting train for cross validation
+trainIndex = createDataPartition(y=train$classe, p = 0.60,list=FALSE)
+trainCV = train[trainIndex,]
+testCV = train[-trainIndex,]
+
+# Summary of the Data
+str(trainCV)
+```
+
+Some of the measurements contain lots of missing values. For this prediction, only measurements without NA's and without empty fields will be considered.Also, sample, user and timestamp data have been removed.
+```{r subsetting,echo=TRUE}
+trainCV <- trainCV[colSums(is.na(trainCV)) == 0]
+trainCV <- trainCV[colSums(trainCV == "") == 0]
+trainCV <- trainCV[,8:60]
+str(trainCV)
+```
+
+## Model fitting
+
+First, create folds for crossvalidation
+
+```{r crossvalidation,echo=TRUE}
+## 4-fold crossvalidation
+cvFolds <- trainControl(method = "cv", number = 4, allowParallel = TRUE,verboseIter = TRUE)
+```
+
+Fitting a logistic regression model on the data. The sample number (X), the user's name (user_name), and the timestamps are excluded from the predictors
+```{r modelfitting,echo=TRUE}
+#model <- train(classe ~ ., method="rf",family="binomial",trControl=cvFolds, data=trainCV[,50:60],prox=TRUE)
+model <- randomForest(classe ~ ., data = trainCV)
+
+# Check summary accuracy 
+model
+
+```
+
+## Prediction
+Testing the model in the crossvalidation test data.
+
+```{r cvTest,echo=TRUE}
+
+# removing the unused features
+testCV <- testCV[names(trainCV)]
+
+# applying model
+predTestCV<-predict(model,newdata=testCV)
+confusionMatrix(predTestCV,testCV$classe)
+impFeatures <- varImp(model)
+
+```
+
+The balance accyracy to detect each classe is ~99%
+
+## Results
+
+Finally, testing the model in the test set:
+
+```{r echo=TRUE}
+# subsetting
+test <- test[, which(names(test) %in% names(trainCV))]
+test2 <- cbind(test,testCV[1:20,53])
+
+# applying model
+predTest <- predict(model,newdata=test)
+
+
+# preparing to write data
+
+pml_write_files = function(x){
+  n = length(x)
+  for(i in 1:n){
+    filename = paste0("problem_id_",i,".txt")
+    write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+  }
+}
+
+#pml_write_files(predTest)
+
+```
+
